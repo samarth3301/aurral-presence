@@ -22,21 +22,48 @@ Aurral's web player (including music.aurral.org) saves your play queue to the se
 - **Resume:** the player saves at most every 30 seconds while playing, so after a short pause the status can take up to about 30 seconds to come back. [lklynet/aurral#2229](https://github.com/lklynet/aurral/pull/2229) makes the player save on resume, which brings this down to a few seconds.
 - **Close the player:** the status clears within about 40 seconds.
 
+## Install
+
+Download the archive for your system from the [latest release](https://github.com/samarth3301/aurral-presence/releases/latest), extract it, and put `aurral-presence` (`aurral-presence.exe` on Windows) somewhere on your `PATH`.
+
+| System | File |
+| --- | --- |
+| macOS, Apple Silicon | `aurral-presence-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| macOS, Intel | `aurral-presence-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
+| Linux, x86_64 | `aurral-presence-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux, ARM64 | `aurral-presence-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz` |
+| Windows | `aurral-presence-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+
+Each archive has a `.sha256` file next to it for checking the download. The binaries are not code-signed. On macOS, clear the download flag once with `xattr -d com.apple.quarantine aurral-presence`; on Windows, choose **More info > Run anyway** the first time.
+
+With Rust installed you can build it instead: `cargo install --git https://github.com/samarth3301/aurral-presence`.
+
 ## Setup
 
 1. Create an application at the [Discord developer portal](https://discord.com/developers/applications) with **Create blank app**. Its name is what Discord shows after "Listening to", so name it `Aurral`. Copy the Application ID from General Information. Optionally upload [`assets/logo.png`](assets/logo.png) under Rich Presence > Art Assets with the name `aurral`; it is the cover shown when no album art is found.
 2. In Aurral, open Settings > Profile > API access and create a key. Use your own key, not the instance `AURRAL_API_KEY`: playback is per user.
-3. Put the secrets in `.env`:
+3. Create the settings files and fill in `.env`:
 
    ```sh
-   cp .env.example .env
+   aurral-presence --init
    ```
 
-4. Adjust `config.json` to taste, then run it with Discord desktop open. Discord in a browser can't receive Rich Presence, and **Settings > Activity Privacy > Share your detected activities** must be on.
+   This writes `config.json` and `.env` to your settings folder and prints where it is:
+
+   | System | Settings folder |
+   | --- | --- |
+   | macOS, Linux | `~/.config/aurral-presence/` (or `$XDG_CONFIG_HOME/aurral-presence/`) |
+   | Windows | `%APPDATA%\aurral-presence\` |
+
+   A `config.json` in the folder you run it from takes priority, which is how it runs from a clone of this repo.
+
+4. Start it with Discord desktop open:
 
    ```sh
-   cargo run --release
+   aurral-presence
    ```
+
+   Discord in a browser can't receive Rich Presence, and **Settings > Activity Privacy > Share your detected activities** must be on.
 
 ## Secrets (`.env`)
 
@@ -48,7 +75,7 @@ Aurral's web player (including music.aurral.org) saves your play queue to the se
 
 ## Customization (`config.json`)
 
-Every field is optional; missing ones use the defaults below. Unknown keys are rejected so typos surface at startup.
+Every field is optional; missing ones use the defaults below. Unknown keys are rejected so typos surface at startup. Ready-made variants live in [`examples/config/`](examples/config/).
 
 ```json
 {
@@ -96,3 +123,11 @@ Artwork lookups send the artist and album name to Apple's public search API. Set
 ## Notes
 
 - Playback from third-party Subsonic apps shows up only if the app syncs its play queue to the server.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project layout, development checks and commit rules. Security problems go through [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)

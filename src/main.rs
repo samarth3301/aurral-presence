@@ -1,19 +1,45 @@
 mod aurral;
 mod config;
+mod presence;
 
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use discord_rich_presence::activity::{Activity, Assets, Button, Timestamps};
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 
-use aurral::{Aurral, Playing, Track};
+use aurral::Aurral;
 use config::Config;
 
+const HELP: &str = "Discord Rich Presence for Aurral.
+
+Usage: aurral-presence [--init | --help | --version]
+
+  --init      Create config.json and .env in the settings folder
+  --help      Show this help
+  --version   Show the version
+
+Settings are read from config.json and .env in the current folder when it has
+a config.json, otherwise from the settings folder.";
+
 fn main() {
-    let _ = dotenvy::dotenv();
-    let config = Config::load().unwrap_or_else(|e| {
+    let dir = config::settings_dir();
+    match std::env::args().nth(1).as_deref() {
+        None => {}
+        Some("--init") => return init(&dir),
+        Some("--help" | "-h") => return println!("{HELP}\n\nSettings folder: {}", dir.display()),
+        Some("--version" | "-V") => {
+            return println!("aurral-presence {}", env!("CARGO_PKG_VERSION"));
+        }
+        Some(other) => {
+            eprintln!("unknown argument: {other}\n\n{HELP}");
+            std::process::exit(2);
+        }
+    }
+
+    let config = Config::load(&dir).unwrap_or_else(|e| {
         eprintln!("config error: {e}");
+        eprintln!("settings folder: {}", dir.display());
+        eprintln!("run `aurral-presence --init` to create starter files, then fill in .env");
         std::process::exit(1);
     });
 
@@ -44,9 +70,11 @@ fn main() {
                     .show_artwork
                     .then(|| aurral.artwork_url(&playing.track))
                     .flatten();
-                if let Err(e) =
-                    discord.set_activity(build_activity(&config, &playing, artwork.as_deref()))
-                {
+                if let Err(e) = discord.set_activity(presence::build_activity(
+                    &config,
+                    &playing,
+                    artwork.as_deref(),
+                )) {
                     eprintln!("discord update failed: {e}");
                     connected = discord.reconnect().is_ok();
                 }
@@ -66,76 +94,25 @@ fn main() {
     }
 }
 
-fn build_activity<'a>(
-    config: &'a Config,
-    playing: &Playing,
-    artwork: Option<&'a str>,
-) -> Activity<'a> {
-    let track = &playing.track;
-    let mut assets = Assets::new()
-        .large_image(artwork.unwrap_or(&config.fallback_image))
-        .large_text(discord_text(&render(&config.large_text, track)));
-    if let Some(image) = &config.small_image {
-        assets = assets.small_image(image.as_str());
-    }
-    if let Some(text) = &config.small_text {
-        assets = assets.small_text(text.as_str());
-    }
-
-    let mut activity = Activity::new()
-        .activity_type(config.activity_type.clone())
-        .status_display_type(config.status_display.clone())
-        .details(discord_text(&render(&config.details, track)))
-        .state(discord_text(&render(&config.state, track)))
-        .assets(assets);
-
-    if let Some(name) = &config.name {
-        activity = activity.name(name.as_str());
-    }
-    if config.show_timestamps {
-        let started = playing.started_ms / 1000;
-        let mut timestamps = Timestamps::new().start(started);
-        if let Some(duration) = track.duration_ms.filter(|d| *d > 0) {
-            timestamps = timestamps.end(started + (duration / 1000) as i64);
+fn init(dir: &std::path::Path) {
+    match config::init(dir) {
+        Ok(created) => {
+            for path in &created {
+                println!("created {}", path.display());
+            }
+            if created.is_empty() {
+                println!("settings already exist in {}", dir.display());
+            }
+            println!(
+                "fill in {}, then run aurral-presence",
+                dir.join(".env").display()
+            );
         }
-        activity = activity.timestamps(timestamps);
+        Err(e) => {
+            eprintln!("could not create settings in {}: {e}", dir.display());
+            std::process::exit(1);
+        }
     }
-    if !config.buttons.is_empty() {
-        activity = activity.buttons(
-            config
-                .buttons
-                .iter()
-                .map(|(label, url)| Button::new(label.as_str(), url.as_str()))
-                .collect(),
-        );
-    }
-    activity
-}
-
-fn render(template: &str, track: &Track) -> String {
-    let duration = track
-        .duration_ms
-        .map(|ms| format!("{}:{:02}", ms / 60_000, ms / 1000 % 60))
-        .unwrap_or_default();
-    template
-        .replace("{title}", &track.title)
-        .replace("{artist}", &track.artist)
-        .replace("{album}", &track.album)
-        .replace("{duration}", &duration)
-}
-
-// Discord rejects text fields shorter than 2 or longer than 128 characters.
-fn discord_text(text: &str) -> String {
-    let text = text.trim();
-    let mut text: String = if text.chars().count() > 128 {
-        text.chars().take(127).chain(['…']).collect()
-    } else {
-        text.to_string()
-    };
-    while text.chars().count() < 2 {
-        text.push(' ');
-    }
-    text
 }
 
 fn now_ms() -> i64 {
@@ -143,30 +120,4 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn renders_placeholders() {
-        let track = Track {
-            id: "1".into(),
-            title: "Song".into(),
-            artist: "Band".into(),
-            album: "Record".into(),
-            duration_ms: Some(185_000),
-        };
-        assert_eq!(
-            render("{title} · {artist} · {album} {duration}", &track),
-            "Song · Band · Record 3:05"
-        );
-    }
-
-    #[test]
-    fn clamps_text_to_discord_limits() {
-        assert_eq!(discord_text("a"), "a ");
-        assert_eq!(discord_text(&"x".repeat(300)).chars().count(), 128);
-    }
 }

@@ -85,7 +85,7 @@ enum Display {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            poll_interval_secs: 10,
+            poll_interval_secs: 5,
             show_timestamps: true,
             activity: ActivitySettings::default(),
             images: ImageSettings::default(),
@@ -193,7 +193,7 @@ mod tests {
         let settings = parse(r#"{"activity":{"type":"playing"}}"#).unwrap();
         assert!(matches!(settings.activity.r#type, Kind::Playing));
         assert_eq!(settings.activity.details, "{title}");
-        assert_eq!(settings.poll_interval_secs, 10);
+        assert_eq!(settings.poll_interval_secs, 5);
     }
 
     #[test]

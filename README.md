@@ -1,14 +1,30 @@
-# aurral-presence
+<p align="center">
+  <img src="assets/logo.svg" width="112" alt="aurral-presence logo">
+</p>
 
-Discord Rich Presence for [Aurral](https://aurral.org). Shows the track you are playing on your Aurral server in your Discord status, with album art and a progress bar.
+<h1 align="center">aurral-presence</h1>
+
+<p align="center">Discord Rich Presence for <a href="https://aurral.org">Aurral</a>. Shows the track you are playing on your Aurral server in your Discord status, with album art and a progress bar.</p>
+
+<p align="center">
+  <img src="assets/presence-card.svg" width="460" alt="Example Discord status card showing a song title, artist, album, album art, progress bar and an Open Aurral button">
+</p>
 
 ## How it works
 
-Aurral's web player (including music.aurral.org) saves your play queue to the server every few seconds while music is playing. This app reads it from `GET /api/play-queue` with your personal API key and shows the current track. When the queue stops updating (paused, closed or finished), the presence is cleared within about 45 seconds.
+<p align="center">
+  <img src="assets/how-it-works.svg" alt="Aurral web player saves the queue to the Aurral server; aurral-presence reads it every 5 seconds with your API key and passes it to Discord desktop over local IPC">
+</p>
+
+Aurral's web player (including music.aurral.org) saves your play queue to the server. This app reads it from `GET /api/play-queue` with your personal API key and passes the current track to the Discord app on the same computer. It only makes outgoing requests: nothing is hosted and no ports are opened.
+
+- **Pause:** the player saves straight away, so the status clears within a few seconds.
+- **Resume:** the player saves at most every 30 seconds while playing, so after a short pause the status can take up to about 30 seconds to come back. [lklynet/aurral#2229](https://github.com/lklynet/aurral/pull/2229) makes the player save on resume, which brings this down to a few seconds.
+- **Close the player:** the status clears within about 40 seconds.
 
 ## Setup
 
-1. Create an application at the [Discord developer portal](https://discord.com/developers/applications) and copy its Application ID. Optionally upload an image named `aurral` under Rich Presence > Art Assets as the fallback cover.
+1. Create an application at the [Discord developer portal](https://discord.com/developers/applications) with **Create blank app**. Its name is what Discord shows after "Listening to", so name it `Aurral`. Copy the Application ID from General Information. Optionally upload [`assets/logo.png`](assets/logo.png) under Rich Presence > Art Assets with the name `aurral`; it is the cover shown when no album art is found.
 2. In Aurral, open Settings > Profile > API access and create a key. Use your own key, not the instance `AURRAL_API_KEY`: playback is per user.
 3. Put the secrets in `.env`:
 
@@ -16,7 +32,7 @@ Aurral's web player (including music.aurral.org) saves your play queue to the se
    cp .env.example .env
    ```
 
-4. Adjust `config.json` to taste, then run it with Discord desktop open:
+4. Adjust `config.json` to taste, then run it with Discord desktop open. Discord in a browser can't receive Rich Presence, and **Settings > Activity Privacy > Share your detected activities** must be on.
 
    ```sh
    cargo run --release
@@ -36,7 +52,7 @@ Every field is optional; missing ones use the defaults below. Unknown keys are r
 
 ```json
 {
-  "pollIntervalSecs": 10,
+  "pollIntervalSecs": 5,
   "showTimestamps": true,
   "activity": {
     "type": "listening",
@@ -60,7 +76,7 @@ Every field is optional; missing ones use the defaults below. Unknown keys are r
 
 | Field | Default | Purpose |
 | --- | --- | --- |
-| `pollIntervalSecs` | `10` | Seconds between checks |
+| `pollIntervalSecs` | `5` | Seconds between checks |
 | `showTimestamps` | `true` | Elapsed / remaining progress bar |
 | `activity.type` | `listening` | `listening`, `playing`, `watching`, `competing` |
 | `activity.statusDisplay` | `details` | Member-list text: `name`, `state`, `details` |

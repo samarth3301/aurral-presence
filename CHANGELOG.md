@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-26
+
+### Fixed
+
+- The Windows release archive is now built and uploaded; 0.1.0 shipped binaries for macOS and Linux only.
+
 ## [0.1.0] - 2026-11-26
 
 ### Added
@@ -13,7 +19,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - `config.json` customization: activity type, member-list text, name, text templates with `{title}`, `{artist}`, `{album}` and `{duration}`, images, artwork and timestamp toggles, up to two buttons and the poll interval.
 - Album art from the iTunes Search API with a configurable fallback image.
 - Per-user settings folder with `--init`, plus `--help` and `--version`.
-- Prebuilt binaries for macOS, Linux and Windows on GitHub Releases.
+- Prebuilt binaries for macOS and Linux on GitHub Releases.
 
-[Unreleased]: https://github.com/samarth3301/aurral-presence/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/samarth3301/aurral-presence/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/samarth3301/aurral-presence/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/samarth3301/aurral-presence/releases/tag/v0.1.0

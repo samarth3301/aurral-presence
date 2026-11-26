@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
-const CLIENT_NAME: &str = "aurral-presence";
-const API_VERSION: &str = "1.16.1";
+// The web player re-saves the queue at least every 30s while playing; older means paused or closed.
+const STALE_AFTER_MS: i64 = 45_000;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,100 +16,64 @@ pub struct Track {
     pub artist: String,
     #[serde(default)]
     pub album: String,
-    pub year: Option<u32>,
-    pub duration: Option<u64>,
-    #[serde(default)]
-    pub username: String,
-    #[serde(default)]
-    pub minutes_ago: u64,
+    pub duration_ms: Option<u64>,
+}
+
+pub struct Playing {
+    pub track: Track,
+    pub started_ms: i64,
 }
 
 #[derive(Deserialize)]
-struct Envelope {
-    #[serde(rename = "subsonic-response")]
-    response: Response,
+struct QueueResponse {
+    queue: Option<Queue>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Response {
-    status: String,
-    error: Option<ApiError>,
-    now_playing: Option<NowPlaying>,
-}
-
-#[derive(Deserialize)]
-struct ApiError {
-    code: u32,
-    message: String,
-}
-
-#[derive(Deserialize)]
-struct NowPlaying {
-    #[serde(default)]
-    entry: Vec<Track>,
+struct Queue {
+    changed: i64,
+    tracks: Vec<Track>,
+    current_index: usize,
+    position_ms: i64,
 }
 
 pub struct Aurral {
     http: Client,
     base_url: String,
-    username: String,
-    password: String,
+    api_key: String,
     artwork: HashMap<String, Option<String>>,
 }
 
 impl Aurral {
-    pub fn new(base_url: String, username: String, password: String) -> Self {
+    pub fn new(base_url: String, api_key: String) -> Self {
         let http = Client::builder()
-            .user_agent(CLIENT_NAME)
-            .timeout(std::time::Duration::from_secs(10))
+            .user_agent("aurral-presence")
+            .timeout(Duration::from_secs(10))
             .build()
             .expect("http client");
         Self {
             http,
             base_url,
-            username,
-            password,
+            api_key,
             artwork: HashMap::new(),
         }
     }
 
-    pub fn now_playing(&self) -> Result<Option<Track>, String> {
-        let salt = format!(
-            "{:x}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        );
-        let token = format!("{:x}", md5::compute(format!("{}{salt}", self.password)));
-        let envelope: Envelope = self
+    pub fn now_playing(&self, now_ms: i64) -> Result<Option<Playing>, String> {
+        let response = self
             .http
-            .get(format!("{}/rest/getNowPlaying.view", self.base_url))
-            .query(&[
-                ("u", self.username.as_str()),
-                ("t", &token),
-                ("s", &salt),
-                ("v", API_VERSION),
-                ("c", CLIENT_NAME),
-                ("f", "json"),
-            ])
+            .get(format!("{}/api/play-queue", self.base_url))
+            .header("X-Api-Key", &self.api_key)
             .send()
-            .and_then(|r| r.error_for_status())
-            .and_then(|r| r.json())
             .map_err(|e| e.to_string())?;
-
-        let response = envelope.response;
-        if response.status != "ok" {
-            return Err(response.error.map_or_else(
-                || "unknown error".into(),
-                |e| format!("subsonic error {}: {}", e.code, e.message),
-            ));
+        match response.status().as_u16() {
+            401 | 403 => return Err("Aurral rejected the API key".into()),
+            code if code >= 400 => return Err(format!("Aurral returned HTTP {code}")),
+            _ => {}
         }
-        Ok(pick_own(
-            response.now_playing.map(|n| n.entry).unwrap_or_default(),
-            &self.username,
-        ))
+        let body: QueueResponse = response.json().map_err(|e| e.to_string())?;
+        Ok(body.queue.and_then(|q| current(q, now_ms)))
     }
 
     pub fn artwork_url(&mut self, track: &Track) -> Option<String> {
@@ -154,35 +118,52 @@ impl Aurral {
     }
 }
 
-fn pick_own(entries: Vec<Track>, username: &str) -> Option<Track> {
-    entries
-        .into_iter()
-        .filter(|t| t.username.eq_ignore_ascii_case(username))
-        .min_by_key(|t| t.minutes_ago)
+fn current(queue: Queue, now_ms: i64) -> Option<Playing> {
+    if now_ms - queue.changed > STALE_AFTER_MS {
+        return None;
+    }
+    let track = queue.tracks.into_iter().nth(queue.current_index)?;
+    let started_ms = queue.changed - queue.position_ms;
+    let ended = track
+        .duration_ms
+        .is_some_and(|d| now_ms > started_ms + d as i64 + 5_000);
+    (!ended).then_some(Playing { track, started_ms })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn parses_now_playing_and_picks_own_latest_entry() {
-        let body = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","nowPlaying":{"entry":[
-            {"id":"1","title":"Old","artist":"A","album":"X","username":"sam","minutesAgo":3},
-            {"id":"2","title":"Other","artist":"B","album":"Y","username":"friend","minutesAgo":0},
-            {"id":"3","title":"New","artist":"C","album":"Z","duration":200,"year":2020,"username":"Sam","minutesAgo":0}
-        ]}}}"#;
-        let envelope: Envelope = serde_json::from_str(body).unwrap();
-        let entries = envelope.response.now_playing.unwrap().entry;
-        let track = pick_own(entries, "sam").unwrap();
-        assert_eq!(track.id, "3");
-        assert_eq!(track.duration, Some(200));
+    const NOW: i64 = 1_800_000_000_000;
+
+    fn queue(changed: i64) -> Queue {
+        let body = format!(
+            r#"{{"queue":{{"changed":{changed},"changedBy":"web","currentIndex":1,"positionMs":20000,"tracks":[
+                {{"id":"1","title":"First","artist":"A","album":"X","durationMs":180000,"streamPath":"/a"}},
+                {{"id":"2","title":"Second","artist":"B","album":"Y","durationMs":200000,"artworkUrl":null}}
+            ]}}}}"#
+        );
+        serde_json::from_str::<QueueResponse>(&body)
+            .unwrap()
+            .queue
+            .unwrap()
     }
 
     #[test]
-    fn parses_empty_now_playing() {
-        let body = r#"{"subsonic-response":{"status":"ok","nowPlaying":{}}}"#;
-        let envelope: Envelope = serde_json::from_str(body).unwrap();
-        assert!(envelope.response.now_playing.unwrap().entry.is_empty());
+    fn picks_current_track_and_start_time() {
+        let playing = current(queue(NOW - 5_000), NOW).unwrap();
+        assert_eq!(playing.track.title, "Second");
+        assert_eq!(playing.started_ms, NOW - 25_000);
+    }
+
+    #[test]
+    fn stale_queue_means_paused() {
+        assert!(current(queue(NOW - 60_000), NOW).is_none());
+    }
+
+    #[test]
+    fn empty_queue_parses() {
+        let body: QueueResponse = serde_json::from_str(r#"{"queue":null}"#).unwrap();
+        assert!(body.queue.is_none());
     }
 }

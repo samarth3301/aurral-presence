@@ -1,0 +1,21 @@
+{
+  "pollIntervalSecs": 10,
+  "showTimestamps": true,
+  "activity": {
+    "type": "listening",
+    "statusDisplay": "details",
+    "name": "Aurral",
+    "details": "{title}",
+    "state": "by {artist}",
+    "largeText": "{album}"
+  },
+  "images": {
+    "showArtwork": true,
+    "fallback": "aurral",
+    "small": null,
+    "smallText": null
+  },
+  "buttons": [
+    { "label": "Open Aurral", "url": "https://music.aurral.org" }
+  ]
+}

@@ -7,26 +7,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use discord_rich_presence::activity::{Activity, Assets, Button, Timestamps};
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 
-use aurral::{Aurral, Track};
+use aurral::{Aurral, Playing, Track};
 use config::Config;
 
 fn main() {
     let _ = dotenvy::dotenv();
-    let config = Config::from_env().unwrap_or_else(|e| {
+    let config = Config::load().unwrap_or_else(|e| {
         eprintln!("config error: {e}");
         std::process::exit(1);
     });
 
-    let mut aurral = Aurral::new(
-        config.server_url.clone(),
-        config.username.clone(),
-        config.password.clone(),
-    );
+    let mut aurral = Aurral::new(config.server_url.clone(), config.api_key.clone());
     let mut discord = DiscordIpcClient::new(&config.discord_client_id);
     let mut connected = false;
-    let mut current: Option<(String, i64)> = None;
+    let mut current: Option<String> = None;
 
-    println!("watching {} as {}", config.server_url, config.username);
+    println!("watching {}", config.server_url);
     loop {
         if !connected {
             connected = discord.connect().is_ok();
@@ -36,31 +32,25 @@ fn main() {
             }
         }
 
-        match aurral.now_playing() {
-            Ok(Some(track)) if connected => {
-                let started = match &current {
-                    Some((id, started)) if *id == track.id && !finished(*started, &track) => {
-                        *started
-                    }
-                    _ => {
-                        println!("now playing: {} - {}", track.artist, track.title);
-                        now() - track.minutes_ago as i64 * 60
-                    }
-                };
+        match aurral.now_playing(now_ms()) {
+            Ok(Some(playing)) if connected => {
+                if current.as_ref() != Some(&playing.track.id) {
+                    println!(
+                        "now playing: {} - {}",
+                        playing.track.artist, playing.track.title
+                    );
+                }
                 let artwork = config
                     .show_artwork
-                    .then(|| aurral.artwork_url(&track))
+                    .then(|| aurral.artwork_url(&playing.track))
                     .flatten();
-                if let Err(e) = discord.set_activity(build_activity(
-                    &config,
-                    &track,
-                    started,
-                    artwork.as_deref(),
-                )) {
+                if let Err(e) =
+                    discord.set_activity(build_activity(&config, &playing, artwork.as_deref()))
+                {
                     eprintln!("discord update failed: {e}");
                     connected = discord.reconnect().is_ok();
                 }
-                current = Some((track.id, started));
+                current = Some(playing.track.id);
             }
             Ok(None) if current.take().is_some() => {
                 println!("playback stopped");
@@ -78,10 +68,10 @@ fn main() {
 
 fn build_activity<'a>(
     config: &'a Config,
-    track: &Track,
-    started: i64,
+    playing: &Playing,
     artwork: Option<&'a str>,
 ) -> Activity<'a> {
+    let track = &playing.track;
     let mut assets = Assets::new()
         .large_image(artwork.unwrap_or(&config.fallback_image))
         .large_text(discord_text(&render(&config.large_text, track)));
@@ -103,9 +93,10 @@ fn build_activity<'a>(
         activity = activity.name(name.as_str());
     }
     if config.show_timestamps {
+        let started = playing.started_ms / 1000;
         let mut timestamps = Timestamps::new().start(started);
-        if let Some(duration) = track.duration.filter(|d| *d > 0) {
-            timestamps = timestamps.end(started + duration as i64);
+        if let Some(duration) = track.duration_ms.filter(|d| *d > 0) {
+            timestamps = timestamps.end(started + (duration / 1000) as i64);
         }
         activity = activity.timestamps(timestamps);
     }
@@ -122,21 +113,15 @@ fn build_activity<'a>(
 }
 
 fn render(template: &str, track: &Track) -> String {
+    let duration = track
+        .duration_ms
+        .map(|ms| format!("{}:{:02}", ms / 60_000, ms / 1000 % 60))
+        .unwrap_or_default();
     template
         .replace("{title}", &track.title)
         .replace("{artist}", &track.artist)
         .replace("{album}", &track.album)
-        .replace(
-            "{year}",
-            &track.year.map(|y| y.to_string()).unwrap_or_default(),
-        )
-        .replace(
-            "{duration}",
-            &track
-                .duration
-                .map(|d| format!("{}:{:02}", d / 60, d % 60))
-                .unwrap_or_default(),
-        )
+        .replace("{duration}", &duration)
 }
 
 // Discord rejects text fields shorter than 2 or longer than 128 characters.
@@ -153,41 +138,29 @@ fn discord_text(text: &str) -> String {
     text
 }
 
-fn finished(started: i64, track: &Track) -> bool {
-    track
-        .duration
-        .is_some_and(|d| now() > started + d as i64 + 30)
-}
-
-fn now() -> i64 {
+fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as i64
+        .as_millis() as i64
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn track() -> Track {
-        Track {
+    #[test]
+    fn renders_placeholders() {
+        let track = Track {
             id: "1".into(),
             title: "Song".into(),
             artist: "Band".into(),
             album: "Record".into(),
-            year: Some(1999),
-            duration: Some(185),
-            username: "sam".into(),
-            minutes_ago: 0,
-        }
-    }
-
-    #[test]
-    fn renders_placeholders() {
+            duration_ms: Some(185_000),
+        };
         assert_eq!(
-            render("{title} · {artist} · {album} ({year}) {duration}", &track()),
-            "Song · Band · Record (1999) 3:05"
+            render("{title} · {artist} · {album} {duration}", &track),
+            "Song · Band · Record 3:05"
         );
     }
 

@@ -2,6 +2,14 @@
 name = "aurral-presence"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Discord Rich Presence for Aurral: shows the track you are playing in your Discord status"
+repository = "https://github.com/samarth3301/aurral-presence"
+license = "MIT"
+readme = "README.md"
+keywords = ["discord", "rich-presence", "aurral", "music"]
+categories = ["command-line-utilities", "multimedia::audio"]
+exclude = ["assets/*.svg", ".github/"]
 
 [dependencies]
 discord-rich-presence = "1.1.0"
@@ -9,3 +17,8 @@ dotenvy = "0.15.7"
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

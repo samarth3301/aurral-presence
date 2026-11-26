@@ -1,0 +1,37 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: The lines aurral-presence printed. Remove your API key or server URL if they appear.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: aurral-presence version
+      description: Output of `aurral-presence --version`.
+      placeholder: aurral-presence 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: aurral
+    attributes:
+      label: Aurral version
+      placeholder: "3.1.0"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true

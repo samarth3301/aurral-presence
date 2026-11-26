@@ -1,0 +1,12 @@
+{
+  "activity": {
+    "details": "{title}",
+    "state": "by {artist}",
+    "largeText": "{album}"
+  },
+  "images": {
+    "showArtwork": false,
+    "fallback": "aurral"
+  },
+  "buttons": []
+}

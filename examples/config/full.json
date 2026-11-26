@@ -1,0 +1,22 @@
+{
+  "pollIntervalSecs": 5,
+  "showTimestamps": true,
+  "activity": {
+    "type": "listening",
+    "statusDisplay": "state",
+    "name": "Aurral",
+    "details": "{title}",
+    "state": "{artist} · {album}",
+    "largeText": "{album} · {duration}"
+  },
+  "images": {
+    "showArtwork": true,
+    "fallback": "aurral",
+    "small": "aurral",
+    "smallText": "Self-hosted with Aurral"
+  },
+  "buttons": [
+    { "label": "Open Aurral", "url": "https://music.aurral.org" },
+    { "label": "Get aurral-presence", "url": "https://github.com/samarth3301/aurral-presence" }
+  ]
+}
